@@ -31,20 +31,26 @@ def get_protein(mgyp: str, db: Session = Depends(get_db)):
 
 @app.get("/proteins/{mgyp}/metadata", response_model=list[schemas.ProteinMetadata])
 def get_protein_metadata(
-    mgyp: str, skip: int = 0, limit: int = 10, db: Session = Depends(get_db)
+    mgyp: str,
+    mgyc: int | None = None,
+    skip: int = 0,
+    limit: int = 10,
+    db: Session = Depends(get_db),
 ):
     """Fetch the metadata for a protein accession"""
     mgyp_id = int(mgyp.replace("MGYP", ""))
 
-    protein_metadata = (
-        db.query(models.ProteinMetadata)
-        .filter(models.ProteinMetadata.mgyp_id == mgyp_id)
-        # .filter(models.ProteinMetadata.public == "public") # TODO: check this one with Kate / Juan
-        .offset(skip)
-        .limit(limit)
-        .all()
+    query = db.query(models.ProteinMetadata).filter(
+        models.ProteinMetadata.mgyp_id == mgyp_id
     )
-    return protein_metadata
+    # .filter(models.ProteinMetadata.public == "public") # TODO: check this one with Kate / Juan
+
+    if mgyc is not None:
+        query = query.filter(models.ProteinMetadata.mgyc_id == mgyc)
+
+    print(str(query))
+
+    return query.offset(skip).limit(limit).all()
 
 
 @app.get("/proteins/{mgyp}/biomes", response_model=list[schemas.Biome])
@@ -117,7 +123,7 @@ def get_protein_assemblies(
             models.ProteinMetadata,
             models.ProteinMetadata.assembly_id == models.Assembly.id,
         )
-        .filter(models.ProteinMetadata.public == "public")
+        # .filter(models.ProteinMetadata.public == "public") TODO: Review, Juan is taking a look at it.
         .filter(models.ProteinMetadata.mgyp_id == mgyp_id)
         .filter(models.Study.accession == study_accession)
         .distinct()
@@ -128,19 +134,31 @@ def get_protein_assemblies(
     return assemblies
 
 
-@app.get("/assemblies/{assembly_accession}/contigs", response_model=list[schemas.Contig])
+@app.get(
+    "/assemblies/{assembly_accession}/contigs", response_model=list[schemas.Contig]
+)
 def get_assembly_contigs(
-    assembly_accession: str, skip: int = 0, limit: int = 10, db: Session = Depends(get_db)
+    assembly_accession: str,
+    mgyp: str | None = None,
+    skip: int = 0,
+    limit: int = 10,
+    db: Session = Depends(get_db),
 ):
-    contigs = (
+    query = (
         db.query(models.Contig)
         .join(models.Assembly, models.Assembly.id == models.Contig.assembly_id)
         .filter(models.Assembly.accession == assembly_accession)
-        .offset(skip)
-        .limit(limit)
-        .all()
     )
-    return contigs
+    if mgyp is not None:
+        mgyp_id = int(mgyp.replace("MGYP", ""))
+        query = query.join(
+            models.ProteinMetadata,
+            models.Contig.id == models.ProteinMetadata.mgyc_id,
+        ).filter(models.ProteinMetadata.mgyp_id == mgyp_id)
+
+    print(query)
+
+    return query.offset(skip).limit(limit).all()
 
 
 @app.get("/contigs/{mgyc}", response_model=schemas.Contig)
